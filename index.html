@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link href="style.css" rel="stylesheet" type="text/css" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+    />
+    <title>Offset Cursor Drawing</title>
+  </head>
+  <body>
+    <div id="newPatientContainer">
+      <button id="newPatientBtn">New Patient</button>
+    </div>
+    <div id="drawingToolsContainer">
+      <div class="button-wrapper">
+        <button id="moveBtn" title="Move">
+          <i class="fas fa-mouse-pointer"></i>
+        </button>
+        <span class="button-label">Move</span>
+      </div>
+      <div class="button-wrapper">
+        <button id="drawBtn" title="Draw"><i class="fas fa-pen"></i></button>
+        <span class="button-label">Draw</span>
+      </div>
+    </div>
+    <div id="editToolsContainer">
+      <div class="button-wrapper">
+        <button id="undoBtn" title="Undo">
+          <i class="fas fa-arrow-left"></i>
+        </button>
+        <span class="button-label">Undo</span>
+      </div>
+      <div class="button-wrapper">
+        <button id="redoBtn" title="Redo">
+          <i class="fas fa-arrow-right"></i>
+        </button>
+        <span class="button-label">Redo</span>
+      </div>
+      <div class="button-wrapper">
+        <button id="resetBtn" title="Reset"><i class="fas fa-undo"></i></button>
+        <span class="button-label">Reset</span>
+      </div>
+    </div>
+    <canvas id="drawingCanvas"></canvas>
+    <div id="customCursor"></div>
+
+    <script type="text/javascript" src="main.js"></script>
+  </body>
+</html>
