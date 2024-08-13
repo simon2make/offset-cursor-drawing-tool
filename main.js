@@ -19,7 +19,8 @@ const resetBtn = document.getElementById("resetBtn");
 
 // 상태 변수들
 let isDrawingMode = false;
-let isMovingCursor = false;
+let isRemoveMode = false;
+let isSubtractingArea = false;
 let cursorOffsetX = 0;
 let cursorOffsetY = 0;
 let currentCursorX = window.innerWidth / 2;
@@ -185,12 +186,102 @@ function mergeRegions(regions) {
   return mergeCanvas;
 }
 
+function subtractRegion(subtractPoints) {
+  const subtractCanvas = document.createElement("canvas");
+  subtractCanvas.width = canvas.width;
+  subtractCanvas.height = canvas.height;
+  const subtractCtx = subtractCanvas.getContext("2d");
+
+  // 기존 영역 그리기
+  subtractCtx.fillStyle = "rgba(0, 106, 255, 1)"; // 불투명하게 설정
+  subtractCtx.beginPath();
+  allLassoRegions.forEach((region) => {
+    subtractCtx.moveTo(region[0].x, region[0].y);
+    for (let i = 1; i < region.length; i++) {
+      subtractCtx.lineTo(region[i].x, region[i].y);
+    }
+    subtractCtx.closePath();
+  });
+  subtractCtx.fill();
+
+  // 제거할 영역 그리기
+  subtractCtx.globalCompositeOperation = "destination-out";
+  subtractCtx.beginPath();
+  subtractCtx.moveTo(subtractPoints[0].x, subtractPoints[0].y);
+  for (let i = 1; i < subtractPoints.length; i++) {
+    subtractCtx.lineTo(subtractPoints[i].x, subtractPoints[i].y);
+  }
+  subtractCtx.closePath();
+  subtractCtx.fill();
+
+  // 결과를 새로운 영역으로 변환
+  const imageData = subtractCtx.getImageData(0, 0, canvas.width, canvas.height);
+  const newRegions = [];
+  let currentRegion = [];
+
+  // 외곽선 탐색
+  function traceContour(startX, startY) {
+    const contour = [];
+    let x = startX;
+    let y = startY;
+    let direction = 0; // 0: 오른쪽, 1: 아래, 2: 왼쪽, 3: 위
+
+    do {
+      contour.push({ x, y });
+
+      // 현재 방향의 다음 픽셀 확인
+      let nextX = x + [1, 0, -1, 0][direction];
+      let nextY = y + [0, 1, 0, -1][direction];
+
+      if (
+        nextX >= 0 &&
+        nextX < canvas.width &&
+        nextY >= 0 &&
+        nextY < canvas.height
+      ) {
+        const index = (nextY * canvas.width + nextX) * 4;
+        if (imageData.data[index + 3] > 0) {
+          x = nextX;
+          y = nextY;
+          direction = (direction + 3) % 4; // 왼쪽으로 회전
+        } else {
+          direction = (direction + 1) % 4; // 오른쪽으로 회전
+        }
+      } else {
+        direction = (direction + 1) % 4; // 오른쪽으로 회전
+      }
+    } while (!(x === startX && y === startY));
+
+    return contour;
+  }
+
+  // 모든 픽셀을 순회하며 외곽선 찾기
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const index = (y * canvas.width + x) * 4;
+      if (imageData.data[index + 3] > 0) {
+        // 불투명한 픽셀이면
+        const contour = traceContour(x, y);
+        if (contour.length > 2) {
+          // 최소 3개 이상의 점이 있어야 유효한 영역
+          newRegions.push(contour);
+        }
+        // 이미 처리한 영역은 건너뛰기
+        x += contour.length;
+      }
+    }
+  }
+
+  allLassoRegions = newRegions;
+}
+
 // 상호작용 함수들
 function startInteraction(e) {
   e.preventDefault();
   const { x, y } = getEventCoordinates(e);
-  if (isDrawingMode) {
+  if (isDrawingMode || isRemoveMode) {
     isMovingCursor = true;
+    isSubtractingArea = true;
     cursorOffsetX = x - currentCursorX;
     cursorOffsetY = y - currentCursorY;
     lassoPoints = [];
@@ -224,7 +315,7 @@ function moveInteraction(e) {
     const newX = x - cursorOffsetX;
     const newY = y - cursorOffsetY;
 
-    if (isDrawingMode) {
+    if (isDrawingMode || (isRemoveMode && isSubtractingArea)) {
       const magneticPoint = findNearestEdgePoint(newX, newY, blobEdges);
       if (
         magneticPoint &&
@@ -261,13 +352,13 @@ function moveInteraction(e) {
 
       // 현재 그리고 있는 선 그리기
       ctx.beginPath();
-      if (lassoPoints.length > 0) {
-        ctx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
-        for (let i = 1; i < lassoPoints.length; i++) {
-          ctx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
-        }
+      ctx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
+      for (let i = 1; i < lassoPoints.length; i++) {
+        ctx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
       }
-      ctx.strokeStyle = "rgba(0, 106, 255, 0.8)";
+      ctx.strokeStyle = isRemoveMode
+        ? "rgba(255, 0, 0, 0.8)"
+        : "rgba(0, 106, 255, 0.8)";
       ctx.lineWidth = 2;
       ctx.stroke();
     }
@@ -278,8 +369,15 @@ function moveInteraction(e) {
 
 function endInteraction(e) {
   e.preventDefault();
-  if (isDrawingMode && lassoPoints.length > 2) {
-    allLassoRegions.push([...lassoPoints]);
+  if (
+    (isDrawingMode || (isRemoveMode && isSubtractingArea)) &&
+    lassoPoints.length > 2
+  ) {
+    if (isDrawingMode) {
+      allLassoRegions.push([...lassoPoints]);
+    } else if (isRemoveMode && isSubtractingArea) {
+      subtractRegion(lassoPoints);
+    }
 
     // 모든 영역을 병합하여 그리기
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -298,9 +396,32 @@ function endInteraction(e) {
 
     saveState();
   }
+
   isMovingCursor = false;
+  isSubtractingArea = false;
   lassoPoints = [];
   tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+}
+
+function removeRegion(x, y) {
+  allLassoRegions = allLassoRegions.filter((region) => {
+    return !isPointInPolygon(x, y, region);
+  });
+}
+
+function isPointInPolygon(x, y, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x,
+      yi = polygon[i].y;
+    const xj = polygon[j].x,
+      yj = polygon[j].y;
+
+    const intersect =
+      yi > y != yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
 }
 
 // Undo/Redo 함수들
@@ -309,7 +430,10 @@ function saveState() {
   if (historyIndex < history.length) {
     history = history.slice(0, historyIndex);
   }
-  history.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+  history.push({
+    imageData: ctx.getImageData(0, 0, canvas.width, canvas.height),
+    regions: JSON.parse(JSON.stringify(allLassoRegions)),
+  });
   if (history.length > maxHistoryLength) {
     history.shift();
     historyIndex--;
@@ -320,7 +444,9 @@ function saveState() {
 function undo() {
   if (historyIndex > 0) {
     historyIndex--;
-    ctx.putImageData(history[historyIndex], 0, 0);
+    const state = history[historyIndex];
+    ctx.putImageData(state.imageData, 0, 0);
+    allLassoRegions = JSON.parse(JSON.stringify(state.regions));
     updateButtonStates();
   }
 }
@@ -328,7 +454,9 @@ function undo() {
 function redo() {
   if (historyIndex < history.length - 1) {
     historyIndex++;
-    ctx.putImageData(history[historyIndex], 0, 0);
+    const state = history[historyIndex];
+    ctx.putImageData(state.imageData, 0, 0);
+    allLassoRegions = JSON.parse(JSON.stringify(state.regions));
     updateButtonStates();
   }
 }
@@ -343,9 +471,14 @@ function resetDrawing() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.putImageData(blobImage, 0, 0);
   allLassoRegions = [];
-  history = [blobImage];
-  historyIndex = 0;
-  updateButtonStates();
+  saveState();
+}
+
+function setActiveButton(activeButton) {
+  [moveBtn, drawBtn, removeBtn].forEach((btn) =>
+    btn.classList.remove("active")
+  );
+  activeButton.classList.add("active");
 }
 
 // 캔버스 크기 업데이트 함수
@@ -362,15 +495,22 @@ function updateCanvasSize() {
 // 이벤트 리스너 설정
 addButtonListeners(moveBtn, function () {
   isDrawingMode = false;
-  moveBtn.classList.add("active");
-  drawBtn.classList.remove("active");
+  isRemoveMode = false;
+  setActiveButton(moveBtn);
   canvas.style.cursor = "default";
 });
 
 addButtonListeners(drawBtn, function () {
   isDrawingMode = true;
-  drawBtn.classList.add("active");
-  moveBtn.classList.remove("active");
+  isRemoveMode = false;
+  setActiveButton(drawBtn);
+  canvas.style.cursor = "crosshair";
+});
+
+addButtonListeners(removeBtn, function () {
+  isDrawingMode = false;
+  isRemoveMode = true;
+  setActiveButton(removeBtn);
   canvas.style.cursor = "crosshair";
 });
 
