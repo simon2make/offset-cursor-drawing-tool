@@ -30,6 +30,10 @@ let allLassoRegions = [];
 let blobImage = null;
 let blobEdges = [];
 let lastMagneticPoint = null;
+let scale = 1;
+let offsetX = 0;
+let offsetY = 0;
+let lastPinchDistance = 0;
 
 // Undo/Redo를 위한 변수들
 let history = [];
@@ -37,6 +41,73 @@ let historyIndex = -1;
 const maxHistoryLength = 20;
 
 // 유틸리티 함수들
+function handlePinch(e) {
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    const touch1 = e.touches[0];
+    const touch2 = e.touches[1];
+    const distance = Math.hypot(
+      touch2.clientX - touch1.clientX,
+      touch2.clientY - touch1.clientY
+    );
+
+    if (lastPinchDistance > 0) {
+      const delta = distance - lastPinchDistance;
+      const newScale = Math.min(Math.max(scale + delta * 0.01, 1), 3);
+      const scaleFactor = newScale / scale;
+      scale = newScale;
+
+      // 줌 중심점 계산
+      const centerX = (touch1.clientX + touch2.clientX) / 2;
+      const centerY = (touch1.clientY + touch2.clientY) / 2;
+
+      // 오프셋 조정
+      offsetX = (offsetX - centerX) * scaleFactor + centerX;
+      offsetY = (offsetY - centerY) * scaleFactor + centerY;
+
+      updateCanvasTransform();
+    }
+
+    lastPinchDistance = distance;
+  }
+}
+
+function handlePan(e) {
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    const touch1 = e.touches[0];
+    const touch2 = e.touches[1];
+    const currentX = (touch1.clientX + touch2.clientX) / 2;
+    const currentY = (touch1.clientY + touch2.clientY) / 2;
+
+    if (lastPanX !== null && lastPanY !== null) {
+      const dx = currentX - lastPanX;
+      const dy = currentY - lastPanY;
+      offsetX += dx;
+      offsetY += dy;
+      updateCanvasTransform();
+    }
+
+    lastPanX = currentX;
+    lastPanY = currentY;
+  }
+}
+
+function handleDoubleTap(e) {
+  if (e.touches.length === 2) {
+    e.preventDefault();
+    scale = 1;
+    offsetX = 0;
+    offsetY = 0;
+    updateCanvasTransform();
+  }
+}
+
+function updateCanvasTransform() {
+  canvas.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+  customCursor.style.transform = `translate(-50%, -50%) scale(${1 / scale})`;
+}
+
 function addButtonListeners(button, clickHandler) {
   button.addEventListener("click", clickHandler);
   button.addEventListener("touchend", function (e) {
@@ -149,6 +220,13 @@ function detectBlobEdges() {
     }
   }
   return edges;
+}
+
+function drawLine(x1, y1, x2, y2) {
+  ctx.beginPath();
+  ctx.moveTo((x1 - offsetX) / scale, (y1 - offsetY) / scale);
+  ctx.lineTo((x2 - offsetX) / scale, (y2 - offsetY) / scale);
+  ctx.stroke();
 }
 
 // 가장 가까운 엣지 포인트 찾기
@@ -312,8 +390,8 @@ function moveInteraction(e) {
   e.preventDefault();
   if (isMovingCursor) {
     const { x, y } = getEventCoordinates(e);
-    const newX = x - cursorOffsetX;
-    const newY = y - cursorOffsetY;
+    const newX = (x - cursorOffsetX - offsetX) / scale;
+    const newY = (y - cursorOffsetY - offsetY) / scale;
 
     if (isDrawingMode || (isRemoveMode && isSubtractingArea)) {
       const magneticPoint = findNearestEdgePoint(newX, newY, blobEdges);
@@ -363,7 +441,7 @@ function moveInteraction(e) {
       ctx.stroke();
     }
 
-    setCursorPosition(newX, newY);
+    setCursorPosition(newX * scale + offsetX, newY * scale + offsetY);
   }
 }
 
@@ -493,6 +571,37 @@ function updateCanvasSize() {
 }
 
 // 이벤트 리스너 설정
+canvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 2) {
+    lastPinchDistance = 0;
+    lastPanX = null;
+    lastPanY = null;
+  }
+});
+
+canvas.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2) {
+    handlePinch(e);
+    handlePan(e);
+  }
+});
+
+canvas.addEventListener('touchend', (e) => {
+  lastPinchDistance = 0;
+  lastPanX = null;
+  lastPanY = null;
+});
+
+let lastTapTime = 0;
+canvas.addEventListener('touchend', (e) => {
+  const currentTime = new Date().getTime();
+  const tapLength = currentTime - lastTapTime;
+  if (tapLength < 500 && tapLength > 0) {
+    handleDoubleTap(e);
+  }
+  lastTapTime = currentTime;
+});
+
 addButtonListeners(moveBtn, function () {
   isDrawingMode = false;
   isRemoveMode = false;
