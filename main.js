@@ -166,7 +166,7 @@ function findNearestEdgePoint(x, y, edges) {
 }
 
 // 영역을 병합하는 함수
-function mergeRegions(regions) {
+function unionRegions(regions) {
   const mergeCanvas = document.createElement("canvas");
   mergeCanvas.width = ctx.canvas.width;
   mergeCanvas.height = ctx.canvas.height;
